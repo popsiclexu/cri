@@ -763,8 +763,30 @@ func createPodStatusFromCRI(p *CRIPod) *v1.PodStatus {
 	}
 	startTime := metav1.NewTime(time.Unix(0, p.status.CreatedAt))
 	return &v1.PodStatus{
-		Phase:             phase,
-		Conditions:        []v1.PodCondition{},
+		Phase: phase,
+		// XXX: Condition decides the final phase of ReplicaSet
+		Conditions: []v1.PodCondition{
+			{
+				Type:               v1.PodInitialized,
+				Status:             v1.ConditionTrue,
+				LastTransitionTime: metav1.Now(),
+			},
+			{
+				Type:               v1.PodReady,
+				Status:             v1.ConditionTrue,
+				LastTransitionTime: metav1.Now(),
+			},
+			{
+				Type:               v1.ContainersReady,
+				Status:             v1.ConditionTrue,
+				LastTransitionTime: metav1.Now(),
+			},
+			{
+				Type:               v1.PodScheduled,
+				Status:             v1.ConditionTrue,
+				LastTransitionTime: metav1.Now(),
+			},
+		},
 		Message:           "",
 		Reason:            "",
 		HostIP:            "",
@@ -778,6 +800,13 @@ func createPodStatusFromCRI(p *CRIPod) *v1.PodStatus {
 func createPodSpecFromCRI(p *CRIPod, nodeName string) *v1.Pod {
 	cSpecs, _ := createContainerSpecsFromCRI(p.containers)
 
+	idx := strings.LastIndex(p.status.Metadata.Name, "-")
+	name := p.status.Metadata.Name
+	generateName := name[:idx+1]
+	ownerReferenceName := name[:idx]
+
+	blockOwnerDeletion := true
+
 	// TODO: Fill out more fields here
 	podSpec := v1.Pod{
 		TypeMeta: metav1.TypeMeta{
@@ -785,11 +814,23 @@ func createPodSpecFromCRI(p *CRIPod, nodeName string) *v1.Pod {
 			APIVersion: "v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      p.status.Metadata.Name,
+			Name:      name,
 			Namespace: p.status.Metadata.Namespace,
 			// ClusterName:       TODO: What is this??
 			UID:               types.UID(p.status.Metadata.Uid),
 			CreationTimestamp: metav1.NewTime(time.Unix(0, p.status.CreatedAt)),
+			// New for ReplicaSet
+			Labels:       p.status.Labels,
+			GenerateName: generateName,
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion:         "apps/v1",
+					BlockOwnerDeletion: &blockOwnerDeletion,
+					Kind:               "ReplicaSet",
+					Name:               ownerReferenceName,
+					UID:                types.UID(p.status.Metadata.Uid),
+				},
+			},
 		},
 		Spec: v1.PodSpec{
 			NodeName:   nodeName,
