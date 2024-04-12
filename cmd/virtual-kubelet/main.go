@@ -16,6 +16,7 @@ package main
 
 import (
 	"context"
+	"os/exec"
 	"strings"
 
 	"github.com/sirupsen/logrus"
@@ -56,6 +57,16 @@ func main() {
 	o := opts.New()
 	o.Provider = "cri"
 	o.Version = strings.Join([]string{k8sVersion, "vk-cri", buildVersion}, "-")
+
+	// XXX: set the node name to the local hostname
+	cmd := exec.Command("scutil", "--get", "LocalHostName")
+	localHostName, err := cmd.Output()
+	if err != nil {
+		log.G(ctx).Fatal(err)
+	}
+	o.NodeName = strings.TrimSpace(string(localHostName))
+	o.DisableTaint = true
+
 	node, err := cli.New(ctx,
 		cli.WithBaseOpts(o),
 		cli.WithCLIVersion(buildVersion, buildTime),
